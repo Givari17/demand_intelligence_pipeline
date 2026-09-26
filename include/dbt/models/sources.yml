@@ -1,0 +1,46 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Tabel bronze yang ditulis langsung oleh task ingestion Airflow (lihat
+      dags/demand_intelligence_dag.py::_ingest_csv_source dan
+      ::_ingest_youtube_reviews). dbt tidak menulis ke sini, hanya membaca
+      sebagai titik awal transformasi.
+    tables:
+      - name: bronze_product
+        description: Master produk (PRODUCT.csv) -- harga, cost, kategori, UoM
+        loaded_at_field: ingestion_timestamp
+        columns:
+          - name: source_record_id
+            tests: [not_null]
+
+      - name: bronze_purchasing
+        description: Purchase order line dari supplier (PURCHASING.csv, inbound supply)
+        loaded_at_field: ingestion_timestamp
+        columns:
+          - name: source_record_id
+            tests: [not_null]
+
+      - name: bronze_sales
+        description: Sales order line (SALES.csv, outbound demand)
+        loaded_at_field: ingestion_timestamp
+        columns:
+          - name: source_record_id
+            tests: [not_null]
+
+      - name: bronze_daily_stock
+        description: Posisi stok harian per produk (DAILY_STOCK.csv)
+        loaded_at_field: ingestion_timestamp
+        columns:
+          - name: source_record_id
+            tests: [not_null]
+
+      - name: bronze_youtube_reviews
+        description: >
+          Video ulasan produk dari creator vlog (YouTube API) -- ingestion
+          masih placeholder, lihat catatan di dags/demand_intelligence_dag.py.
+        loaded_at_field: ingestion_timestamp
+        columns:
+          - name: source_record_id
+            tests: [not_null]

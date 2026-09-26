@@ -1,0 +1,44 @@
+# Cek per dimensi. Uniqueness dan referential integrity dasar sudah dicover
+# dbt test (include/dbt/models/gold/schema.yml) -- di sini fokus ke business
+# rule dan validity yang kurang pas dicek dbt.
+#
+# CATATAN: dataset sumbernya historis statis (2025-01-01 s/d 2025-12-31),
+# bukan feed harian live seperti versi Marketing sebelumnya -- jadi TIDAK ada
+# check freshness()/volume-anomaly di sini (itu cuma relevan untuk pipeline
+# yang jalan incremental terhadap data yang terus mengalir tiap hari).
+
+checks for fact_sales:
+  - missing_count(product_id) = 0:
+      name: Setiap baris sales harus punya product_id
+  - duplicate_count(sales_id) = 0
+  - failed rows:
+      name: qty tidak boleh negatif
+      fail query: |
+        select * from fact_sales where qty < 0
+  - failed rows:
+      name: unit_price tidak boleh negatif
+      fail query: |
+        select * from fact_sales where unit_price < 0
+
+checks for fact_purchasing:
+  - missing_count(product_id) = 0
+  - duplicate_count(po_line_id) = 0
+  - failed rows:
+      name: qty_received tidak boleh melebihi qty_ordered
+      fail query: |
+        select * from fact_purchasing where qty_received > qty_ordered
+  - failed rows:
+      name: receipt_date tidak boleh sebelum order_date
+      fail query: |
+        select * from fact_purchasing where receipt_date < order_date
+
+checks for fact_daily_stock:
+  - missing_count(product_id) = 0
+  - failed rows:
+      name: on_hand_qty tidak boleh negatif
+      fail query: |
+        select * from fact_daily_stock where on_hand_qty < 0
+
+checks for dim_product:
+  - missing_count(product_id) = 0
+  - duplicate_count(product_id) = 0

@@ -1,0 +1,63 @@
+version: 2
+
+# Pembagian tanggung jawab DQ (supaya tidak duplikat dengan Soda):
+# - dbt tests di sini  -> structural: uniqueness, not_null, referential integrity.
+#   Ini jalan sebagai bagian dari `dbt test`, cepat gagal sebelum data dipakai downstream.
+# - Soda (soda/checks/checks_gold.yml) -> business-level: validity, volume
+#   anomaly, threshold bisnis. Freshness TIDAK dipakai di sini karena dataset
+#   sumbernya historis statis (2025-01-01 s/d 2025-12-31), bukan feed harian live.
+
+models:
+  - name: dim_product
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+
+  - name: dim_date
+    columns:
+      - name: date_day
+        tests: [unique, not_null]
+
+  - name: fact_sales
+    description: >
+      Metric definition -- net_revenue = qty * unit_price * (1 - discount_rate).
+    columns:
+      - name: sales_id
+        tests: [unique, not_null]
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_id
+
+  - name: fact_purchasing
+    columns:
+      - name: po_line_id
+        tests: [unique, not_null]
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_id
+
+  - name: fact_daily_stock
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_id
+      - name: date_day
+        tests: [not_null]
+
+  - name: fact_youtube_reviews
+    description: >
+      product_id nullable -- baris yang belum ter-mapping ke produk (lihat
+      catatan di silver_youtube_reviews.sql) tidak divalidasi relationships
+      di sini supaya tidak memblokir ingestion video yang belum di-tag.
+    columns:
+      - name: video_id
+        tests: [unique, not_null]

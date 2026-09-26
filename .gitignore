@@ -1,0 +1,11 @@
+.env
+*.duckdb
+*.duckdb.wal
+include/data/*.csv
+include/dbt/target/
+include/dbt/dbt_packages/
+include/dbt/logs/
+logs/
+__pycache__/
+*.pyc
+.DS_Store

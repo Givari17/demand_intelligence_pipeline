@@ -1,0 +1,25 @@
+name: demand_intelligence_project
+version: "1.0.0"
+config-version: 2
+
+profile: demand_intelligence_project
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  demand_intelligence_project:
+    bronze:
+      +materialized: view      # bronze cuma cerminan raw, ga perlu disimpan ulang
+      +tags: ["bronze"]
+    silver:
+      +materialized: table
+      +tags: ["silver"]
+    gold:
+      +materialized: table
+      +tags: ["gold"]

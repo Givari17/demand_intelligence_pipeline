@@ -1,0 +1,17 @@
+# Transformasi
+dbt-duckdb
+dbt-snowflake
+
+# Data quality
+soda-core-duckdb
+
+# DB client dipakai langsung dari task ingestion (di luar dbt)
+duckdb
+pandas
+
+# Ingestion YouTube (video ulasan produk dari creator vlog)
+google-api-python-client
+
+# Cek kompatibilitas versi exact dengan Airflow di Astro Runtime image kamu:
+# `astro dev bash` lalu `pip show apache-airflow` untuk lihat versi Airflow terpasang,
+# baru pin versi dbt-core/dbt-duckdb/soda-core yang cocok di file ini.
