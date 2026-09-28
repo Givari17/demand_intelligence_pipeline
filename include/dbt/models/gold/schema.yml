@@ -53,11 +53,21 @@ models:
       - name: date_day
         tests: [not_null]
 
-  - name: fact_youtube_reviews
+  - name: fact_youtube_videos
     description: >
-      product_id nullable -- baris yang belum ter-mapping ke produk (lihat
-      catatan di silver_youtube_reviews.sql) tidak divalidasi relationships
-      di sini supaya tidak memblokir ingestion video yang belum di-tag.
+      Konteks pasar standalone dari YouTube (tidak ada product_id, sengaja
+      tidak di-join ke fact_sales -- sales sintetis, tidak ada hubungan kausal).
     columns:
       - name: video_id
         tests: [unique, not_null]
+
+  - name: fact_youtube_comments
+    columns:
+      - name: comment_id
+        tests: [unique, not_null]
+      - name: video_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('fact_youtube_videos')
+              field: video_id

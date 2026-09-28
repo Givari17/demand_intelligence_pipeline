@@ -42,3 +42,14 @@ checks for fact_daily_stock:
 checks for dim_product:
   - missing_count(product_id) = 0
   - duplicate_count(product_id) = 0
+
+checks for fact_youtube_videos:
+  - duplicate_count(video_id) = 0
+  - failed rows:
+      name: view_count tidak boleh negatif
+      fail query: |
+        select * from fact_youtube_videos where view_count < 0
+
+checks for fact_youtube_comments:
+  - duplicate_count(comment_id) = 0
+  - missing_count(comment_text) = 0

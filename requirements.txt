@@ -9,7 +9,7 @@ soda-core-duckdb
 duckdb
 pandas
 
-# Ingestion YouTube (video ulasan produk dari creator vlog)
+# Ingestion YouTube (video & komentar konteks pasar via YouTube Data API v3)
 google-api-python-client
 
 # Cek kompatibilitas versi exact dengan Airflow di Astro Runtime image kamu:

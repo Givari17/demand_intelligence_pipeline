@@ -7,11 +7,11 @@ dipanggil sebagai task DQ terpisah setelah gold selesai.
 
 Domain: supply-chain analytics (demand forecasting & inventory optimization)
 dari dataset sintetis 13-tabel (PRODUCT, PURCHASING, SALES, DAILY_STOCK
-diingest di fase ini; 9 tabel lain ditunda) + video ulasan produk dari
-creator vlog via YouTube API, untuk analisis pengaruh content marketing
-terhadap demand. Model dbt di include/dbt/models/ (dim_product, fact_sales,
-fact_purchasing, fact_daily_stock, fact_youtube_reviews) sudah disesuaikan ke
-domain ini.
+diingest di fase ini; 9 tabel lain ditunda) + video & komentar pasar dari
+YouTube API (willingness to pay, sentimen tren) sebagai konteks pelengkap
+STANDALONE -- tidak di-join ke product_id karena sales bersifat sintetis.
+Model dbt di include/dbt/models/ (dim_product, fact_sales, fact_purchasing,
+fact_daily_stock, fact_youtube_videos, fact_youtube_comments) sesuai domain ini.
 
 Idempotency untuk backfill-safe:
 - Tiap task ingestion menulis ke partisi berbasis execution_date (bukan append
@@ -153,39 +153,107 @@ def _ingest_csv_source(source_name: str, **context):
     _log_run_metadata(status="success", records_processed=len(rows), **context)
 
 
-def _ingest_youtube_reviews(**context):
-    """Ambil video ulasan produk dari creator vlog via YouTube Data API,
-    di-scope per produk/brand yang direview (bukan per channel). Menulis ke
-    bronze_youtube_reviews dengan pola metadata & idempotency yang sama.
+YOUTUBE_TOPICS_FILE = "youtube_topics.csv"
+YOUTUBE_MAX_VIDEOS_PER_TOPIC = 10
+YOUTUBE_MAX_COMMENTS_PER_VIDEO = 20
 
-    TODO: panggil YouTube Data API v3 (butuh YOUTUBE_API_KEY dari environment
-    -- simpan sebagai Codespaces secret, jangan di .env yang ikut ter-commit).
-    Query per produk/brand (search.list), lalu ambil video stats
-    (videos.list) dan komentar (commentThreads.list) untuk tiap video hasil.
+
+def _ingest_youtube_market_sentiment(**context):
+    """Ambil video + komentar pasar (willingness to pay, sentimen tren) dari
+    YouTube Data API v3 sebagai konteks pelengkap STANDALONE -- tidak di-join
+    ke product_id (dataset supply-chain sintetis, jadi tidak ada hubungan
+    kausal dengan sales). Topik/keyword dibaca dari include/data/youtube_topics.csv
+    (kolom: topic_id, query, language).
+
+    Menulis ke dua tabel bronze: bronze_youtube_videos (grain video) dan
+    bronze_youtube_comments (grain komentar), delete-then-insert per partisi
+    execution_date untuk idempotency. Butuh env YOUTUBE_API_KEY.
+    Kuota: search.list = 100 unit/panggilan (kuota harian default 10.000).
     """
+    import json
+    import duckdb
+    import pandas as pd
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    api_key = os.environ.get("YOUTUBE_API_KEY")
+    if not api_key:
+        raise RuntimeError("YOUTUBE_API_KEY belum di-set (Codespaces secret / .env).")
+
     execution_date = context["ds"]
     batch_id = context["run_id"]
     now = datetime.utcnow()
 
-    records = []  # TODO: hasil pemanggilan YouTube Data API, list of dict
+    topics = pd.read_csv(os.path.join(DATA_DIR, YOUTUBE_TOPICS_FILE), dtype=str)
+    yt = build("youtube", "v3", developerKey=api_key, cache_discovery=False)
 
-    import duckdb
+    video_rows, comment_rows = [], []
+    seen_videos = set()
+
+    for _, t in topics.iterrows():
+        search = yt.search().list(
+            part="id", q=t["query"], type="video",
+            maxResults=YOUTUBE_MAX_VIDEOS_PER_TOPIC,
+            relevanceLanguage=t.get("language") or None,
+        ).execute()
+        ids = [i["id"]["videoId"] for i in search.get("items", [])
+               if i["id"]["videoId"] not in seen_videos]
+        if not ids:
+            continue
+        seen_videos.update(ids)
+
+        details = yt.videos().list(part="snippet,statistics", id=",".join(ids)).execute()
+        for v in details.get("items", []):
+            sn, st = v["snippet"], v.get("statistics", {})
+            record = {
+                "video_id": v["id"], "topic_id": t["topic_id"], "query": t["query"],
+                "channel_title": sn.get("channelTitle"), "title": sn.get("title"),
+                "published_at": sn.get("publishedAt"),
+                "view_count": st.get("viewCount"), "like_count": st.get("likeCount"),
+                "comment_count": st.get("commentCount"),
+            }
+            video_rows.append((
+                "youtube_videos", now, sn.get("publishedAt"), batch_id,
+                v["id"], execution_date, json.dumps(record),
+            ))
+
+            try:
+                threads = yt.commentThreads().list(
+                    part="snippet", videoId=v["id"], order="relevance",
+                    maxResults=YOUTUBE_MAX_COMMENTS_PER_VIDEO, textFormat="plainText",
+                ).execute()
+            except HttpError:
+                continue  # komentar dinonaktifkan / dibatasi -- lewati video ini
+            for th in threads.get("items", []):
+                c = th["snippet"]["topLevelComment"]
+                cs = c["snippet"]
+                crecord = {
+                    "comment_id": c["id"], "video_id": v["id"], "topic_id": t["topic_id"],
+                    "text": cs.get("textDisplay"), "like_count": cs.get("likeCount"),
+                    "published_at": cs.get("publishedAt"),
+                }
+                comment_rows.append((
+                    "youtube_comments", now, cs.get("publishedAt"), batch_id,
+                    c["id"], execution_date, json.dumps(crecord),
+                ))
+
     con = duckdb.connect(DUCKDB_PATH)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS bronze_youtube_reviews (
-            source_name VARCHAR, ingestion_timestamp TIMESTAMP,
-            record_timestamp TIMESTAMP, batch_id VARCHAR, source_record_id VARCHAR,
-            partition_date VARCHAR, payload JSON
-        )
-    """)
-    con.execute(
-        "DELETE FROM bronze_youtube_reviews WHERE partition_date = ?",
-        [execution_date],
-    )
-    # TODO: insert `records` ke bronze_youtube_reviews di sini
+    for table, rows in (("youtube_videos", video_rows), ("youtube_comments", comment_rows)):
+        con.execute(f"""
+            CREATE TABLE IF NOT EXISTS bronze_{table} (
+                source_name VARCHAR, ingestion_timestamp TIMESTAMP,
+                record_timestamp TIMESTAMP, batch_id VARCHAR, source_record_id VARCHAR,
+                partition_date VARCHAR, payload JSON
+            )
+        """)
+        con.execute(f"DELETE FROM bronze_{table} WHERE partition_date = ?", [execution_date])
+        if rows:
+            con.executemany(f"INSERT INTO bronze_{table} VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
     con.close()
 
-    _log_run_metadata(status="success", records_processed=len(records), **context)
+    _log_run_metadata(
+        status="success", records_processed=len(video_rows) + len(comment_rows), **context
+    )
 
 
 def _run_dbt(select_tag: str, **context):
@@ -238,8 +306,8 @@ with DAG(
                 on_failure_callback=_on_failure_callback,
             )
         PythonOperator(
-            task_id="ingest_youtube_reviews",
-            python_callable=_ingest_youtube_reviews,
+            task_id="ingest_youtube_market_sentiment",
+            python_callable=_ingest_youtube_market_sentiment,
             on_failure_callback=_on_failure_callback,
         )
 

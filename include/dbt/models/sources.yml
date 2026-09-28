@@ -5,7 +5,7 @@ sources:
     description: >
       Tabel bronze yang ditulis langsung oleh task ingestion Airflow (lihat
       dags/demand_intelligence_dag.py::_ingest_csv_source dan
-      ::_ingest_youtube_reviews). dbt tidak menulis ke sini, hanya membaca
+      ::_ingest_youtube_market_sentiment). dbt tidak menulis ke sini, hanya membaca
       sebagai titik awal transformasi.
     tables:
       - name: bronze_product
@@ -36,10 +36,17 @@ sources:
           - name: source_record_id
             tests: [not_null]
 
-      - name: bronze_youtube_reviews
+      - name: bronze_youtube_videos
         description: >
-          Video ulasan produk dari creator vlog (YouTube API) -- ingestion
-          masih placeholder, lihat catatan di dags/demand_intelligence_dag.py.
+          Video YouTube tentang topik pasar (willingness to pay, sentimen tren),
+          konteks pelengkap standalone. Lihat _ingest_youtube_market_sentiment.
+        loaded_at_field: ingestion_timestamp
+        columns:
+          - name: source_record_id
+            tests: [not_null]
+
+      - name: bronze_youtube_comments
+        description: Komentar teratas dari video pada bronze_youtube_videos
         loaded_at_field: ingestion_timestamp
         columns:
           - name: source_record_id

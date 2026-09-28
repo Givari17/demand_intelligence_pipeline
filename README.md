@@ -1,8 +1,8 @@
 # Demand Intelligence Pipeline
 
 Pipeline data domain **supply chain analytics** (demand forecasting &
-inventory optimization) + **content marketing impact** (video ulasan produk
-dari creator vlog via YouTube API).
+inventory optimization) + **konteks pasar** (video & komentar YouTube tentang
+willingness to pay dan sentimen tren, sebagai pelengkap standalone).
 
 Alur: ingestion (CSV supply-chain + YouTube API) → Airflow (CeleryExecutor +
 Redis) → DuckDB (bronze/silver/gold via dbt) → Soda (data quality) → Metabase
@@ -21,7 +21,7 @@ Grafana untuk monitoring.
 | `PURCHASING.csv` | Purchase order dari supplier (inbound supply) | 1 baris / PO line |
 | `SALES.csv` | Order penjualan (outbound demand) | 1 baris / sales line |
 | `DAILY_STOCK.csv` | Posisi stok harian per produk | 1 baris / (produk, tanggal) |
-| YouTube API | Video ulasan produk dari creator vlog | 1 baris / video |
+| YouTube API | Video & komentar pasar (willingness to pay, sentimen tren), topik dari `include/data/youtube_topics.csv` | 1 baris / video; 1 baris / komentar |
 
 Keempat CSV berasal dari dataset supply-chain sintetis (13 tabel relasional,
 seed=42, periode 2025-01-01 s/d 2025-12-31, dibuat untuk demand forecasting
@@ -135,16 +135,17 @@ Snowflake siap (lihat `include/dbt/profiles.yml` target `snowflake`).
 - `fact_sales` — sales line + `net_revenue` terhitung
 - `fact_purchasing` — PO line + `total_cost` terhitung
 - `fact_daily_stock` — posisi stok harian per produk
-- `fact_youtube_reviews` — video ulasan produk, dengan `product_id` untuk
-  join ke `dim_product`/`fact_sales` (analisis dampak review terhadap demand
-  belum dibangun sebagai mart — sengaja ditunda satu layer di atas gold ini)
+- `fact_youtube_videos` / `fact_youtube_comments` — konteks pasar
+  standalone. **Sengaja tidak di-join ke `product_id`/`fact_sales`**: sales
+  bersifat sintetis sehingga tidak ada hubungan kausal dengan YouTube. Cukup
+  dipakai sebagai pembanding tren/sentimen, bukan analisis dampak.
 
 ## Yang masih placeholder (`TODO` di kode)
 
-- `_ingest_youtube_reviews` di `dags/demand_intelligence_dag.py` — belum ada
-  pemanggilan YouTube Data API v3 asli (butuh `YOUTUBE_API_KEY` sebagai
-  Codespaces secret), termasuk skema payload/mapping video → `product_id`
-  yang masih asumsi (lihat catatan di `stg_youtube_reviews.sql`).
+- `_ingest_youtube_market_sentiment` sudah terimplementasi (YouTube Data API
+  v3) tapi **belum pernah dijalankan/diuji** — butuh `YOUTUBE_API_KEY` sebagai
+  Codespaces secret, dan topik di `include/data/youtube_topics.csv` masih
+  contoh awal yang perlu kamu sesuaikan.
 - 9 tabel lain dari dataset supply-chain (SUPPLIER, PRODUCT_SUPPLIER,
   SUPPLY_ROUTE, CUSTOMER_COMPANY, SALES_CHANNEL, ABC_SEGMENT_v22, CALENDAR,
   SPECIAL_EVENTS, WEATHER_CLEAN) belum dipetakan ke `CSV_SOURCES` — sengaja
@@ -159,7 +160,7 @@ Proyek ini awalnya bernama `marketing_medallion_pipeline`, berdomain
 campaign/ads marketing (CRM leads, campaign spend, conversion funnel).
 Setelah dicek, data leads/campaign/conversion yang dimaksud ternyata tidak
 pernah tersedia — yang ada adalah dataset supply-chain sintetis (product,
-purchasing, sales, daily_stock) dan video review YouTube. Karena kedua
+purchasing, sales, daily_stock) dan data pasar dari YouTube. Karena kedua
 sumber ini tidak mengandung data campaign/ads sama sekali, seluruh
 penamaan, dbt model (dim_campaign, dim_customer, fact_conversion,
 fact_marketing_spend), dan Soda checks yang khusus untuk skema Marketing
