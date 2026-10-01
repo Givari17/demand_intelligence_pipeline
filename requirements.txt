@@ -15,3 +15,6 @@ google-api-python-client
 # Cek kompatibilitas versi exact dengan Airflow di Astro Runtime image kamu:
 # `astro dev bash` lalu `pip show apache-airflow` untuk lihat versi Airflow terpasang,
 # baru pin versi dbt-core/dbt-duckdb/soda-core yang cocok di file ini.
+
+# Airflow
+apache-airflow-providers-fab
